@@ -11,10 +11,11 @@ type Vote int
 
 const (
 	VoteNone Vote = iota // not voted
-	VoteUp
-	VoteDown
+	VoteUp               // thumbs-up
+	VoteDown             // thumbs-down
 )
 
+// String returns "up", "down" or "none".
 func (v Vote) String() string {
 	switch v {
 	case VoteUp:

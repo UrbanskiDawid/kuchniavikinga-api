@@ -13,6 +13,7 @@ import (
 // ids in scientific notation (1.23E+8); ID accepts both forms.
 type ID int64
 
+// UnmarshalJSON accepts plain and scientific-notation numbers.
 func (i *ID) UnmarshalJSON(b []byte) error {
 	f, err := strconv.ParseFloat(string(b), 64)
 	*i = ID(f)
@@ -72,8 +73,7 @@ func (c *Client) Order(ctx context.Context, id ID) (*Order, error) {
 	return o, nil
 }
 
-// The panel sends dates as "YYYY-MM-DD"; decode them into time.Time.
-
+// UnmarshalJSON decodes the panel's "YYYY-MM-DD" dates into From and To.
 func (o *Order) UnmarshalJSON(b []byte) error {
 	type plain Order
 	aux := struct {
@@ -90,6 +90,7 @@ func (o *Order) UnmarshalJSON(b []byte) error {
 	return errors.Join(err1, err2)
 }
 
+// UnmarshalJSON decodes the panel's "YYYY-MM-DD" date into Date.
 func (d *Delivery) UnmarshalJSON(b []byte) (err error) {
 	type plain Delivery
 	aux := struct {

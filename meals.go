@@ -9,8 +9,9 @@ import (
 // Dish is a dish on the menu.
 type Dish struct {
 	// ID identifies the dish in its diet/calorie variant.
-	ID          ID           `json:"dietCaloriesMealId"`
-	Name        string       `json:"menuMealName"`
+	ID   ID     `json:"dietCaloriesMealId"`
+	Name string `json:"menuMealName"` // dish name, in Polish
+
 	Nutrition   Nutrition    `json:"nutrition"`
 	Ingredients []Ingredient `json:"ingredients"`
 }
@@ -47,6 +48,7 @@ type Meal struct {
 	orderID, deliveryID ID
 }
 
+// UnmarshalJSON decodes a meal and the vote recorded on it (see Vote).
 func (m *Meal) UnmarshalJSON(b []byte) error {
 	type plain Meal
 	aux := struct {
@@ -78,7 +80,7 @@ type Alternative struct {
 
 // Rating is the aggregate of other customers' reviews of a dish.
 type Rating struct {
-	Score float64 `json:"score"`
+	Score float64 `json:"score"` // average score
 	Votes int     `json:"number"`
 }
 
