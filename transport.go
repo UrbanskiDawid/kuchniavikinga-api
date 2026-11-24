@@ -117,22 +117,22 @@ func (t *transport) send(ctx context.Context, method, path string, body *strings
 	return resp.Body.Close()
 }
 
-// getJSON performs a request expecting 200 and decodes the JSON body into out.
-func (t *transport) getJSON(ctx context.Context, method, path string, out any) error {
+// get performs a request expecting 200 and decodes the JSON body into a T.
+func get[T any](ctx context.Context, t *transport, method, path string) (v T, err error) {
 	req, err := t.request(ctx, method, path, nil)
 	if err != nil {
-		return err
+		return v, err
 	}
 	req.Header.Set("Accept", "application/json")
 	resp, err := t.do(req, http.StatusOK)
 	if err != nil {
-		return err
+		return v, err
 	}
 	defer resp.Body.Close()
-	if err := json.NewDecoder(resp.Body).Decode(out); err != nil {
-		return fmt.Errorf("%s %s: decode: %w", method, path, err)
+	if err := json.NewDecoder(resp.Body).Decode(&v); err != nil {
+		return v, fmt.Errorf("%s %s: decode: %w", method, path, err)
 	}
-	return nil
+	return v, nil
 }
 
 type dumper struct {

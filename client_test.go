@@ -74,11 +74,11 @@ func TestFullFlow(t *testing.T) {
 		t.Fatalf("Orders = %v, %v", orders, err)
 	}
 	o := orders[0]
-	if o.ID != 7 || o.From != time.Date(2026, 1, 1, 0, 0, 0, 0, time.UTC) || len(o.Deliveries) != 1 {
+	if o.ID != 7 || !o.From.Equal(time.Date(2026, 1, 1, 0, 0, 0, 0, time.UTC)) || len(o.Deliveries) != 1 {
 		t.Fatalf("order = %+v", o)
 	}
 	d := o.Deliveries[0]
-	if d.ID != deliveryID || d.Cancelled || d.Date.Day() != 2 {
+	if d.ID != ID(deliveryID) || d.Cancelled || d.Date.Day() != 2 {
 		t.Fatalf("scientific-notation delivery = %+v", d)
 	}
 
@@ -87,7 +87,7 @@ func TestFullFlow(t *testing.T) {
 		t.Fatalf("Meals = %v, %v", meals, err)
 	}
 	m := meals[0]
-	if m.Slot != "Śniadanie" || m.Dish.Name != "Owsianka" || m.Dish.Calories != 350 || !m.Switchable || !m.Dish.Ingredients[0].Major {
+	if m.Slot != "Śniadanie" || m.Name != "Owsianka" || m.Nutrition.Calories != 350 || !m.Switchable || !m.Dish.Ingredients[0].Major {
 		t.Fatalf("meal = %+v", m)
 	}
 

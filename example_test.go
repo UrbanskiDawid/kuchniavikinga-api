@@ -25,7 +25,7 @@ func Example() {
 		}
 		alts, _ := m.Alternatives(ctx)
 		for _, a := range alts {
-			fmt.Printf("%s: %s -> %s\n", m.Slot, m.Dish.Name, a.Dish.Name)
+			fmt.Printf("%s: %s -> %s\n", m.Slot, m.Name, a.Dish.Name)
 		}
 	}
 }
