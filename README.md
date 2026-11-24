@@ -21,46 +21,63 @@ import kuchniavikinga "github.com/UrbanskiDawid/kuchniavikinga-api"
 
 ```go
 ctx := context.Background()
-c := kuchniavikinga.New(kuchniavikinga.Options{})
-if err := c.Open(ctx, kuchniavikinga.Auth{Username: user, Password: pass}); err != nil {
+c, err := kuchniavikinga.Login(ctx, user, pass)
+if err != nil {
     log.Fatal(err)
 }
-defer c.Close(ctx)
+defer c.Logout(ctx)
 
-orders, _ := c.ActiveOrders(ctx)            // []OrderID
-order, _ := c.Order(ctx, orders[0])         // deliveries per day
-d := order.Deliveries[0]
-menu, _ := c.Menu(ctx, d.ID())              // meals of that delivery
-m := menu.DeliveryMenuMeal[0]
-opts, _ := c.SwitchOptions(ctx, orders[0], d.ID(), m.DeliveryMealID)
-// modifies your real order:
-_, err := c.Switch(ctx, orders[0], d.ID(), m.DeliveryMealID, opts[0].MenuMealDetails.DietCaloriesMealID)
+orders, _ := c.Orders(ctx)                  // active orders, with deliveries
+d := orders[0].Deliveries[0]                // one per delivery day
+meals, _ := d.Meals(ctx)                    // breakfast, lunch, ...
+alts, _ := meals[0].Alternatives(ctx)       // what it can be swapped for
+err = meals[0].SwitchTo(ctx, alts[0])       // modifies your real order
 ```
+
+## Model
+
+You walk down from the account to a single meal; every level is a handle that
+carries its own ids, so there are no id arguments to pass around.
+
+| Type | Obtained by | Methods |
+|---|---|---|
+| `Client` | `Login` | `Orders`, `Order`, `Logout` |
+| `Order` | `Client.Orders` | field `Deliveries` |
+| `Delivery` | `Order.Deliveries` | `Meals` |
+| `Meal` | `Delivery.Meals` | `Alternatives`, `SwitchTo` |
+| `Alternative` | `Meal.Alternatives` | plain data (`Dish`, `Diet`, `Allowed`, `Rating`) |
+
+Options for `Login`: `WithBaseURL`, `WithTimeout`, `WithHTTPClient`, `WithDebug`.
 
 ## Endpoints
 
-| Method | Go | HTTP |
-|---|---|---|
-| `Open` | log in | `GET /logowanie`, `GET /api/profile/accounts` (401 expected), `GET /api/open/analytical-tools-settings`, `POST /api/auth/login` |
-| `Close` | log out | `POST /api/auth/logout` |
-| `ActiveOrders` | active order ids | `GET /api/company/customer/order/active-ids` |
-| `Order` | order with deliveries | `GET /api/company/customer/order/{id}` |
-| `Menu` | meals of a delivery | `GET /api/company/general/menus/delivery/{id}/new` |
-| `SwitchOptions` | possible replacements | `GET .../order/{o}/deliveries/{d}/delivery-meals/{m}/switch/new` |
-| `Switch` | replace a meal | `PUT .../switch?amount=1&dietCaloriesMealId={id}` |
+| Call | HTTP |
+|---|---|
+| `Login` | `GET /logowanie`, `GET /api/profile/accounts` (401 expected), `GET /api/open/analytical-tools-settings`, `POST /api/auth/login` |
+| `Logout` | `POST /api/auth/logout` |
+| `Orders` / `Order` | `GET /api/company/customer/order/active-ids`, `GET .../order/{id}` |
+| `Delivery.Meals` | `GET /api/company/general/menus/delivery/{id}/new` |
+| `Meal.Alternatives` | `GET .../order/{o}/deliveries/{d}/delivery-meals/{m}/switch/new` |
+| `Meal.SwitchTo` | `PUT .../switch?amount=1&dietCaloriesMealId={id}` |
 
 ## Notes
 
 - **CSRF:** the panel uses Spring CSRF. Non-GET requests automatically send the
   `X-XSRF-TOKEN` header taken from the `XSRF-TOKEN` cookie.
-- **Delivery ids** can arrive in scientific notation; use `Delivery.ID()`.
+- **Dates** are `time.Time` at midnight UTC; only the date part is meaningful.
 - **Errors:** unexpected HTTP statuses are returned as `*StatusError`
-  (use `errors.As`).
-- **Customisation:** `Options.HTTPClient` lets you plug in a custom
-  `Transport` (caching, proxy, metrics); `Options.BaseURL` targets a test
-  server; `Options.DebugOutput` dumps traffic (**including your password**).
+  (use `errors.As`); `Meal.SwitchTo` returns `ErrNotSwitchable` for a disallowed alternative.
+- **Customisation:** `WithHTTPClient` lets you plug in a custom
+  `Transport` (caching, proxy, metrics); `WithBaseURL` targets a test
+  server; `WithDebug` dumps traffic (**including your password**).
 - Full reference: `go doc -all github.com/UrbanskiDawid/kuchniavikinga-api`.
 
 ## License
 
 MIT
+
+## Releasing
+
+Push a tag (`git tag v0.2.0 && git push origin v0.2.0`). The `release`
+workflow runs gofmt, `go vet` and `go test -race` first; the GitHub release is
+created only if they pass.

@@ -7,12 +7,19 @@ import (
 	"net/http/httptest"
 	"strings"
 	"testing"
+	"time"
 )
 
-// fakePanel emulates the login flow and a few endpoints.
-func fakePanel(t *testing.T) (*httptest.Server, *[]string) {
+const (
+	basePath   = "/api/company/customer/order/7/deliveries/123000000/delivery-meals/5/switch"
+	deliveryID = 123000000
+)
+
+// fakePanel emulates the login flow and the endpoints; csrf collects the
+// X-XSRF-TOKEN header seen on PUT requests.
+func fakePanel(t *testing.T) (srv *httptest.Server, csrf *[]string) {
 	t.Helper()
-	var csrfOnPut []string
+	csrf = new([]string)
 	mux := http.NewServeMux()
 	mux.HandleFunc("GET /logowanie", func(w http.ResponseWriter, r *http.Request) {
 		http.SetCookie(w, &http.Cookie{Name: "XSRF-TOKEN", Value: "tok1", Path: "/"})
@@ -28,19 +35,21 @@ func fakePanel(t *testing.T) (*httptest.Server, *[]string) {
 		http.SetCookie(w, &http.Cookie{Name: "XSRF-TOKEN", Value: "tok2", Path: "/"})
 	})
 	mux.HandleFunc("GET /api/company/customer/order/active-ids", func(w http.ResponseWriter, r *http.Request) {
-		w.Write([]byte(`[7,8]`))
+		w.Write([]byte(`[7]`))
 	})
 	mux.HandleFunc("GET /api/company/customer/order/7", func(w http.ResponseWriter, r *http.Request) {
 		w.Write([]byte(`{"dateFrom":"2026-01-01","dateTo":"2026-01-31","deliveries":[{"date":"2026-01-02","deleted":false,"deliveryId":1.23E+8}]}`))
 	})
 	mux.HandleFunc("GET /api/company/general/menus/delivery/123000000/new", func(w http.ResponseWriter, r *http.Request) {
-		w.Write([]byte(`{"deliveryMenuMeal":[{"deliveryMealId":5,"mealName":"Śniadanie","menuMealName":"Owsianka","dietCaloriesMealId":9,"switchable":true,"ingredients":[{"name":"owies","major":true}]}]}`))
+		w.Write([]byte(`{"deliveryMenuMeal":[{"deliveryMealId":5,"mealName":"Śniadanie","menuMealName":"Owsianka","dietCaloriesMealId":9,"nutrition":{"calories":350,"caloriesText":"350 kcal"},"switchable":true,"ingredients":[{"name":"owies","major":true}]}]}`))
 	})
-	mux.HandleFunc("GET /api/company/customer/order/7/deliveries/123000000/delivery-meals/5/switch/new", func(w http.ResponseWriter, r *http.Request) {
-		w.Write([]byte(`{"mealChangeOptions":[{"menuMealDetails":{"menuMealName":"Zupa","dietCaloriesMealId":11},"dietOptionName":"Low carb","canBeChanged":true,"reviewSummary":null}]}`))
+	mux.HandleFunc("GET "+basePath+"/new", func(w http.ResponseWriter, r *http.Request) {
+		w.Write([]byte(`{"mealChangeOptions":[
+			{"menuMealDetails":{"menuMealName":"Zupa","dietCaloriesMealId":11},"dietOptionName":"Low carb","canBeChanged":true,"reviewSummary":{"score":4.5,"number":12}},
+			{"menuMealDetails":{"menuMealName":"Pierogi","dietCaloriesMealId":12},"canBeChanged":false,"reviewSummary":null}]}`))
 	})
-	mux.HandleFunc("PUT /api/company/customer/order/7/deliveries/123000000/delivery-meals/5/switch", func(w http.ResponseWriter, r *http.Request) {
-		csrfOnPut = append(csrfOnPut, r.Header.Get("X-XSRF-TOKEN"))
+	mux.HandleFunc("PUT "+basePath, func(w http.ResponseWriter, r *http.Request) {
+		*csrf = append(*csrf, r.Header.Get("X-XSRF-TOKEN"))
 		if r.URL.Query().Get("dietCaloriesMealId") != "11" {
 			w.WriteHeader(400)
 			return
@@ -48,46 +57,64 @@ func fakePanel(t *testing.T) (*httptest.Server, *[]string) {
 		w.Write([]byte(`{"deliveryMealId":5,"dietCaloriesMealId":11,"seen":"SWITCHED"}`))
 	})
 	mux.HandleFunc("POST /api/auth/logout", func(w http.ResponseWriter, r *http.Request) {})
-	return httptest.NewServer(mux), &csrfOnPut
+	return httptest.NewServer(mux), csrf
 }
 
 func TestFullFlow(t *testing.T) {
 	srv, csrf := fakePanel(t)
 	defer srv.Close()
 	ctx := context.Background()
-	c := New(Options{BaseURL: srv.URL})
-	if err := c.Open(ctx, Auth{"u", "p"}); err != nil {
+
+	c, err := Login(ctx, "u", "p", WithBaseURL(srv.URL))
+	if err != nil {
 		t.Fatal(err)
 	}
-	ids, err := c.ActiveOrders(ctx)
-	if err != nil || len(ids) != 2 || ids[0] != 7 {
-		t.Fatalf("ActiveOrders = %v, %v", ids, err)
+	orders, err := c.Orders(ctx)
+	if err != nil || len(orders) != 1 {
+		t.Fatalf("Orders = %v, %v", orders, err)
 	}
-	order, err := c.Order(ctx, 7)
-	if err != nil || len(order.Deliveries) != 1 {
-		t.Fatalf("Order = %+v, %v", order, err)
+	o := orders[0]
+	if o.ID != 7 || o.From != time.Date(2026, 1, 1, 0, 0, 0, 0, time.UTC) || len(o.Deliveries) != 1 {
+		t.Fatalf("order = %+v", o)
 	}
-	d := order.Deliveries[0]
-	if d.ID() != 123000000 {
-		t.Fatalf("scientific-notation id decoded as %d", d.ID())
+	d := o.Deliveries[0]
+	if d.ID != deliveryID || d.Cancelled || d.Date.Day() != 2 {
+		t.Fatalf("scientific-notation delivery = %+v", d)
 	}
-	menu, err := c.Menu(ctx, d.ID())
-	if err != nil || menu.DeliveryMenuMeal[0].MenuMealName != "Owsianka" {
-		t.Fatalf("Menu = %+v, %v", menu, err)
+
+	meals, err := d.Meals(ctx)
+	if err != nil || len(meals) != 1 {
+		t.Fatalf("Meals = %v, %v", meals, err)
 	}
-	m := menu.DeliveryMenuMeal[0]
-	opts, err := c.SwitchOptions(ctx, 7, d.ID(), m.DeliveryMealID)
-	if err != nil || len(opts) != 1 || opts[0].ReviewSummary != nil || opts[0].MenuMealDetails.DietCaloriesMealID != 11 {
-		t.Fatalf("SwitchOptions = %+v, %v", opts, err)
+	m := meals[0]
+	if m.Slot != "Śniadanie" || m.Dish.Name != "Owsianka" || m.Dish.Calories != 350 || !m.Switchable || !m.Dish.Ingredients[0].Major {
+		t.Fatalf("meal = %+v", m)
 	}
-	res, err := c.Switch(ctx, 7, d.ID(), m.DeliveryMealID, 11)
-	if err != nil || res.Seen != "SWITCHED" {
-		t.Fatalf("Switch = %+v, %v", res, err)
+
+	alts, err := m.Alternatives(ctx)
+	if err != nil || len(alts) != 2 {
+		t.Fatalf("Alternatives = %v, %v", alts, err)
+	}
+	if alts[0].Rating == nil || alts[0].Rating.Votes != 12 || alts[0].Diet != "Low carb" || !alts[0].Allowed {
+		t.Fatalf("alt[0] = %+v", alts[0])
+	}
+	if alts[1].Rating != nil || alts[1].Allowed {
+		t.Fatalf("alt[1] = %+v", alts[1])
+	}
+
+	if err := m.SwitchTo(ctx, alts[1]); !errors.Is(err, ErrNotSwitchable) {
+		t.Fatalf("SwitchTo(disallowed) = %v, want ErrNotSwitchable", err)
+	}
+	if err := m.SwitchTo(ctx, alts[0]); err != nil {
+		t.Fatal(err)
+	}
+	if m.Dish.Name != "Zupa" {
+		t.Fatalf("meal not updated after switch: %+v", m.Dish)
 	}
 	if len(*csrf) != 1 || (*csrf)[0] != "tok2" {
 		t.Fatalf("CSRF header on PUT = %v, want rotated token tok2", *csrf)
 	}
-	if err := c.Close(ctx); err != nil {
+	if err := c.Logout(ctx); err != nil {
 		t.Fatal(err)
 	}
 }
@@ -95,7 +122,7 @@ func TestFullFlow(t *testing.T) {
 func TestLoginFailureIsStatusError(t *testing.T) {
 	srv, _ := fakePanel(t)
 	defer srv.Close()
-	err := New(Options{BaseURL: srv.URL}).Open(context.Background(), Auth{"u", "bad"})
+	_, err := Login(context.Background(), "u", "bad", WithBaseURL(srv.URL))
 	var se *StatusError
 	if !errors.As(err, &se) || se.Got != 401 || se.Want != 200 {
 		t.Fatalf("err = %v, want *StatusError 401", err)
@@ -106,8 +133,7 @@ func TestDebugOutput(t *testing.T) {
 	srv, _ := fakePanel(t)
 	defer srv.Close()
 	var sb strings.Builder
-	c := New(Options{BaseURL: srv.URL, DebugOutput: &sb})
-	if err := c.Open(context.Background(), Auth{"u", "p"}); err != nil {
+	if _, err := Login(context.Background(), "u", "p", WithBaseURL(srv.URL), WithDebug(&sb)); err != nil {
 		t.Fatal(err)
 	}
 	if !strings.Contains(sb.String(), "=== HTTP REQUEST ===") {

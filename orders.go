@@ -3,57 +3,75 @@ package kuchniavikinga
 import (
 	"context"
 	"fmt"
+	"time"
 )
 
-// Identifier types. They are distinct types so they cannot be mixed up by accident.
-type (
-	// OrderID identifies an order (a subscription period with many deliveries).
-	OrderID int64
-	// DeliveryID identifies one delivery (one day's boxes) within an order.
-	DeliveryID int64
-	// DeliveryMealID identifies one meal slot (e.g. breakfast) inside a delivery.
-	DeliveryMealID int64
-	// DietCaloriesMealID identifies a concrete dish in a given diet/calorie
-	// variant; it is what Switch takes as its target.
-	DietCaloriesMealID int
-)
-
-// Delivery is one day's delivery inside an Order.
-type Delivery struct {
-	// Date is the delivery day in YYYY-MM-DD form.
-	Date string `json:"date"`
-	// Deleted is true for cancelled deliveries.
-	Deleted bool `json:"deleted"`
-	// DeliveryIDFloat is the raw id. The API sometimes sends it in scientific
-	// notation, so it is decoded as float64; use ID instead.
-	DeliveryIDFloat float64 `json:"deliveryId"`
-}
-
-// ID returns the delivery id as a DeliveryID.
-func (d Delivery) ID() DeliveryID { return DeliveryID(d.DeliveryIDFloat) }
-
-// Order is a customer order with its deliveries.
+// Order is a customer order: a period of daily deliveries.
 type Order struct {
-	// DateFrom and DateTo bound the order, in YYYY-MM-DD form.
-	DateFrom   string     `json:"dateFrom"`
-	DateTo     string     `json:"dateTo"`
-	Deliveries []Delivery `json:"deliveries"`
+	ID int64
+	// From and To bound the order (midnight UTC; only the date is meaningful).
+	From, To   time.Time
+	Deliveries []*Delivery
 }
 
-// ActiveOrders returns the ids of the customer's active orders.
+// Delivery is one day's delivery within an Order.
+type Delivery struct {
+	ID int64
+	// Date is the delivery day (midnight UTC; only the date is meaningful).
+	Date time.Time
+	// Cancelled is true for deliveries that were removed from the order.
+	Cancelled bool
+
+	c       *Client
+	orderID int64
+}
+
+// Orders returns the customer's active orders with their deliveries, oldest
+// id first as the panel returns them.
 //
-//	GET /api/company/customer/order/active-ids
-func (c *Client) ActiveOrders(ctx context.Context) ([]OrderID, error) {
-	ids, err := requestJSON[[]OrderID](ctx, c, "GET", "/api/company/customer/order/active-ids")
-	if err != nil {
+//	GET /api/company/customer/order/active-ids, then GET /api/company/customer/order/{id} for each
+func (c *Client) Orders(ctx context.Context) ([]*Order, error) {
+	var ids []int64
+	if err := c.t.getJSON(ctx, "GET", "/api/company/customer/order/active-ids", &ids); err != nil {
 		return nil, err
 	}
-	return *ids, nil
+	orders := make([]*Order, 0, len(ids))
+	for _, id := range ids {
+		o, err := c.Order(ctx, id)
+		if err != nil {
+			return nil, err
+		}
+		orders = append(orders, o)
+	}
+	return orders, nil
 }
 
-// Order returns an order with its deliveries.
+// Order returns one order by id.
 //
-//	GET /api/company/customer/order/{orderId}
-func (c *Client) Order(ctx context.Context, id OrderID) (*Order, error) {
-	return requestJSON[Order](ctx, c, "GET", fmt.Sprintf("/api/company/customer/order/%d", id))
+//	GET /api/company/customer/order/{id}
+func (c *Client) Order(ctx context.Context, id int64) (*Order, error) {
+	var w wireOrder
+	if err := c.t.getJSON(ctx, "GET", fmt.Sprintf("/api/company/customer/order/%d", id), &w); err != nil {
+		return nil, err
+	}
+	o := &Order{ID: id}
+	var err error
+	if o.From, err = parseDate(w.DateFrom); err != nil {
+		return nil, fmt.Errorf("order %d: dateFrom: %w", id, err)
+	}
+	if o.To, err = parseDate(w.DateTo); err != nil {
+		return nil, fmt.Errorf("order %d: dateTo: %w", id, err)
+	}
+	for _, wd := range w.Deliveries {
+		date, err := parseDate(wd.Date)
+		if err != nil {
+			return nil, fmt.Errorf("order %d: delivery date: %w", id, err)
+		}
+		o.Deliveries = append(o.Deliveries, &Delivery{
+			ID: int64(wd.ID), Date: date, Cancelled: wd.Deleted, c: c, orderID: id,
+		})
+	}
+	return o, nil
 }
+
+func parseDate(s string) (time.Time, error) { return time.Parse(time.DateOnly, s) }

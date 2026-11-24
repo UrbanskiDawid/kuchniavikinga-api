@@ -7,26 +7,25 @@ import (
 	kuchniavikinga "github.com/UrbanskiDawid/kuchniavikinga-api"
 )
 
-// List today's-order meals and their switch options (compile-checked only).
+// Print what each switchable meal of the first delivery could be swapped for
+// (compile-checked only; it needs a real account).
 func Example() {
 	ctx := context.Background()
-	c := kuchniavikinga.New(kuchniavikinga.Options{})
-	if err := c.Open(ctx, kuchniavikinga.Auth{Username: "me@example.com", Password: "secret"}); err != nil {
+	c, err := kuchniavikinga.Login(ctx, "me@example.com", "secret")
+	if err != nil {
 		panic(err)
 	}
-	defer c.Close(ctx)
+	defer c.Logout(ctx)
 
-	orders, _ := c.ActiveOrders(ctx)
-	order, _ := c.Order(ctx, orders[0])
-	delivery := order.Deliveries[0]
-	menu, _ := c.Menu(ctx, delivery.ID())
-	for _, meal := range menu.DeliveryMenuMeal {
-		if !meal.Switchable {
+	orders, _ := c.Orders(ctx)
+	meals, _ := orders[0].Deliveries[0].Meals(ctx)
+	for _, m := range meals {
+		if !m.Switchable {
 			continue
 		}
-		options, _ := c.SwitchOptions(ctx, orders[0], delivery.ID(), meal.DeliveryMealID)
-		for _, o := range options {
-			fmt.Println(meal.MenuMealName, "->", o.MenuMealDetails.MenuMealName)
+		alts, _ := m.Alternatives(ctx)
+		for _, a := range alts {
+			fmt.Printf("%s: %s -> %s\n", m.Slot, m.Dish.Name, a.Dish.Name)
 		}
 	}
 }
