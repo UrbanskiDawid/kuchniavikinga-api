@@ -10,6 +10,10 @@ import (
 // the chosen alternative (see Alternative.Allowed).
 var ErrNotSwitchable = errors.New("kuchniavikinga: alternative cannot be switched to")
 
+// ErrInvalidVote is returned by Meal.SetVote for anything but VoteUp or
+// VoteDown; the panel offers no way to withdraw a vote.
+var ErrInvalidVote = errors.New("kuchniavikinga: vote must be VoteUp or VoteDown")
+
 // StatusError is returned when the panel answers with an unexpected HTTP
 // status. Use errors.As to inspect it, e.g. to detect a 401 or 403.
 type StatusError struct {

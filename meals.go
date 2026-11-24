@@ -2,6 +2,7 @@ package kuchniavikinga
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 )
 
@@ -38,8 +39,30 @@ type Meal struct {
 	// Switchable reports whether the panel lets you replace this meal.
 	Switchable bool `json:"switchable"`
 
+	// MenuID identifies the menu entry; it is the key of votes (see SetVote).
+	MenuID ID `json:"menuMealId"`
+
+	vote                Vote
 	c                   *Client
 	orderID, deliveryID ID
+}
+
+func (m *Meal) UnmarshalJSON(b []byte) error {
+	type plain Meal
+	aux := struct {
+		*plain
+		Review *struct {
+			Score *int `json:"score"`
+		} `json:"review"`
+	}{plain: (*plain)(m)}
+	if err := json.Unmarshal(b, &aux); err != nil {
+		return err
+	}
+	m.vote = VoteNone
+	if aux.Review != nil && aux.Review.Score != nil {
+		m.vote = voteFromScore(*aux.Review.Score)
+	}
+	return nil
 }
 
 // Alternative is a dish that a Meal can be switched to.

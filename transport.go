@@ -1,6 +1,7 @@
 package kuchniavikinga
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
 	"fmt"
@@ -115,6 +116,30 @@ func (t *transport) send(ctx context.Context, method, path string, body *strings
 		return err
 	}
 	return resp.Body.Close()
+}
+
+// sendJSON performs a request with a JSON body, accepting any 2xx status, and
+// discards the response body.
+func (t *transport) sendJSON(ctx context.Context, method, path string, body any) error {
+	b, err := json.Marshal(body)
+	if err != nil {
+		return err
+	}
+	req, err := t.request(ctx, method, path, bytes.NewReader(b))
+	if err != nil {
+		return err
+	}
+	req.Header.Set("Content-Type", "application/json")
+	resp, err := t.http.Do(req)
+	if err != nil {
+		return err
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode < 200 || resp.StatusCode > 299 {
+		msg, _ := io.ReadAll(resp.Body)
+		return &StatusError{Method: method, URL: req.URL.String(), Got: resp.StatusCode, Want: http.StatusOK, Body: string(msg)}
+	}
+	return nil
 }
 
 // get performs a request expecting 200 and decodes the JSON body into a T.

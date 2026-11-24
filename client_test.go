@@ -3,6 +3,7 @@ package kuchniavikinga
 import (
 	"context"
 	"errors"
+	"io"
 	"net/http"
 	"net/http/httptest"
 	"strings"
@@ -41,7 +42,7 @@ func fakePanel(t *testing.T) (srv *httptest.Server, csrf *[]string) {
 		w.Write([]byte(`{"dateFrom":"2026-01-01","dateTo":"2026-01-31","deliveries":[{"date":"2026-01-02","deleted":false,"deliveryId":1.23E+8}]}`))
 	})
 	mux.HandleFunc("GET /api/company/general/menus/delivery/123000000/new", func(w http.ResponseWriter, r *http.Request) {
-		w.Write([]byte(`{"deliveryMenuMeal":[{"deliveryMealId":5,"mealName":"Śniadanie","menuMealName":"Owsianka","dietCaloriesMealId":9,"nutrition":{"calories":350,"caloriesText":"350 kcal"},"switchable":true,"ingredients":[{"name":"owies","major":true}]}]}`))
+		w.Write([]byte(`{"deliveryMenuMeal":[{"deliveryMealId":5,"menuMealId":77,"review":{"reviewId":{"menuMealId":77},"score":0,"text":""},"mealName":"Śniadanie","menuMealName":"Owsianka","dietCaloriesMealId":9,"nutrition":{"calories":350,"caloriesText":"350 kcal"},"switchable":true,"ingredients":[{"name":"owies","major":true}]}]}`))
 	})
 	mux.HandleFunc("GET "+basePath+"/new", func(w http.ResponseWriter, r *http.Request) {
 		w.Write([]byte(`{"mealChangeOptions":[
@@ -55,6 +56,11 @@ func fakePanel(t *testing.T) (srv *httptest.Server, csrf *[]string) {
 			return
 		}
 		w.Write([]byte(`{"deliveryMealId":5,"dietCaloriesMealId":11,"seen":"SWITCHED"}`))
+	})
+	mux.HandleFunc("POST /api/company/customer/review", func(w http.ResponseWriter, r *http.Request) {
+		b, _ := io.ReadAll(r.Body)
+		*csrf = append(*csrf, r.Header.Get("Content-Type")+"|"+r.Header.Get("X-XSRF-TOKEN")+"|"+string(b))
+		w.WriteHeader(201)
 	})
 	mux.HandleFunc("POST /api/auth/logout", func(w http.ResponseWriter, r *http.Request) {})
 	return httptest.NewServer(mux), csrf
@@ -138,5 +144,35 @@ func TestDebugOutput(t *testing.T) {
 	}
 	if !strings.Contains(sb.String(), "=== HTTP REQUEST ===") {
 		t.Fatal("no debug dump written")
+	}
+}
+
+func TestVotes(t *testing.T) {
+	srv, seen := fakePanel(t)
+	defer srv.Close()
+	ctx := context.Background()
+	c, err := Login(ctx, "u", "p", WithBaseURL(srv.URL))
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	voted, err := c.MyVotes(ctx, time.Date(2026, 1, 2, 0, 0, 0, 0, time.UTC))
+	if err != nil || len(voted) != 1 || voted[0].MenuID != 77 || voted[0].Vote() != VoteDown {
+		t.Fatalf("MyVotes = %v, %v", voted, err)
+	}
+	if other, _ := c.MyVotes(ctx, time.Date(2026, 1, 3, 0, 0, 0, 0, time.UTC)); len(other) != 0 {
+		t.Fatalf("MyVotes for another day = %v", other)
+	}
+
+	m := voted[0]
+	if err := m.SetVote(ctx, VoteNone); !errors.Is(err, ErrInvalidVote) {
+		t.Fatalf("SetVote(none) = %v", err)
+	}
+	if err := m.SetVote(ctx, VoteUp); err != nil {
+		t.Fatal(err)
+	}
+	want := `application/json|tok2|{"reviewId":{"menuMealId":77},"score":1,"text":""}`
+	if len(*seen) != 1 || (*seen)[0] != want || m.Vote() != VoteUp {
+		t.Fatalf("POST = %v, vote = %v", *seen, m.Vote())
 	}
 }
