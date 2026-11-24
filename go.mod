@@ -1,3 +1,3 @@
-module github.com/UrbanskiDawid/kuchniawikinga-api
+module github.com/UrbanskiDawid/kuchniavikinga-api
 
 go 1.24

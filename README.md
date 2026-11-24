@@ -1,4 +1,4 @@
-# kuchniawikinga-api
+# kuchniavikinga-api
 
 Unofficial Go client for the customer API of [panel.kuchniavikinga.pl](https://panel.kuchniavikinga.pl)
 (Kuchnia Vikinga diet catering). Pure API access: no scoring, no UI, no config.
@@ -10,11 +10,11 @@ Standard library only, zero dependencies.
 ## Install
 
 ```sh
-go get github.com/UrbanskiDawid/kuchniawikinga-api
+go get github.com/UrbanskiDawid/kuchniavikinga-api
 ```
 
 ```go
-import kuchniavikinga "github.com/UrbanskiDawid/kuchniawikinga-api"
+import kuchniavikinga "github.com/UrbanskiDawid/kuchniavikinga-api"
 ```
 
 ## Quick start
@@ -59,7 +59,7 @@ _, err := c.Switch(ctx, orders[0], d.ID(), m.DeliveryMealID, opts[0].MenuMealDet
 - **Customisation:** `Options.HTTPClient` lets you plug in a custom
   `Transport` (caching, proxy, metrics); `Options.BaseURL` targets a test
   server; `Options.DebugOutput` dumps traffic (**including your password**).
-- Full reference: `go doc -all github.com/UrbanskiDawid/kuchniawikinga-api`.
+- Full reference: `go doc -all github.com/UrbanskiDawid/kuchniavikinga-api`.
 
 ## License
 

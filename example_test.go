@@ -4,7 +4,7 @@ import (
 	"context"
 	"fmt"
 
-	kuchniavikinga "github.com/UrbanskiDawid/kuchniawikinga-api"
+	kuchniavikinga "github.com/UrbanskiDawid/kuchniavikinga-api"
 )
 
 // List today's-order meals and their switch options (compile-checked only).
