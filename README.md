@@ -1,5 +1,7 @@
 # kuchniavikinga-api
 
+[![Go Reference](https://pkg.go.dev/badge/github.com/UrbanskiDawid/kuchniavikinga-api.svg)](https://pkg.go.dev/github.com/UrbanskiDawid/kuchniavikinga-api)
+
 Unofficial Go client for the customer API of [panel.kuchniavikinga.pl](https://panel.kuchniavikinga.pl)
 (Kuchnia Vikinga diet catering). Pure API access: no scoring, no UI, no config.
 Standard library only, zero dependencies.
